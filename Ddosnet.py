@@ -1,7 +1,7 @@
 import optparse
 import sys
 import time
-from libloris import
+import libloris
 
 def parse_options():
     parser = optparse.OptionParser(usage = "%prog [options] www.host.com")
