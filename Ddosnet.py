@@ -162,19 +162,3 @@ if __name__ == "__main__":
         print('Pyloris has started %i attacks, with %i threads and %i connections currently running.' % status)
     status = loris.status()
     print('Pyloris has completed %i attacks.' % (status[0]))
-
-
-Footer
-© 2022 GitHub, Inc.
-Footer navigation
-Terms
-Privacy
-Security
-Status
-Docs
-Contact GitHub
-Pricing
-API
-Training
-Blog
-About
