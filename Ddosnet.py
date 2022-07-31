@@ -1,11 +1,6 @@
 import asyncio, aiohttp, argparse
 
 
-parser = argparse.ArgumentParser()
-
-parser.add_argument("url", type=str)
-
-parser.add_argument("--concurrency", default=16, type=int)
 
 parser.add_argument("--timeout", default=5, type=int)
 
