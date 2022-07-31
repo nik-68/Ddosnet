@@ -1,7 +1,6 @@
 import optparse
 import sys
 import time
-
 from libloris import
 
 def parse_options():
