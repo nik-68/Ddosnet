@@ -6,6 +6,7 @@ import requests
 from threading import Thread
 import random
 import os
+import time
 print("head...")
 users = [
     "Mozilla/5.0 (X11; U; Linux x86_64; en-US; rv:1.9.1.3) Gecko/20090913 Firefox/3.5.3"
@@ -15,9 +16,13 @@ users = [
 headers = {
     'User-Agent' : random.choice(users)
 }
+
 os.system("clear")
-print("Channel: @Cyber_Puffin")
-print("Developer: @lamer112311")
+print(green + f" З А Г Р У З К А....")
+time.sleep(1.5)
+os.system("clear")
+print(" '''🅳🅴🅳🅲🅾🅳🅴 🆃🅴🅰🅼''' ")
+
 url = input("Ссылка: ")
 threads = int(input("Потоки (~800 лучше): "))
 
