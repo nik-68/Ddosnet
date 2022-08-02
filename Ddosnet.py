@@ -47,6 +47,8 @@ def send():
         print("post...")
         requests.head(url, headers=headers, data=payload)
         print("head...")
+        requests.bypass(url, headers=headers, data=payload)
+        print("bypass...")
 
 if __name__ == '__main__':
     for i in range (threads):
