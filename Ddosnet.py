@@ -49,6 +49,9 @@ def send():
         print("head...")
         requests.bypass(url, headers=headers, data=payload)
         print("bypass...")
+        requests.cfsoc(url, headers=headers, data=payload)
+        print("cfsoc...")
+
 
 if __name__ == '__main__':
     for i in range (threads):
